@@ -1,0 +1,1053 @@
+---
+title: "Exploration and Application of Binomial GLM's"
+author: "Douglas Bowen"
+date: "Date: 29-Mar-2022"
+abstract: "The objective of this report is to first and foremost discuss the theory behind the Binomial GLM and choices behind the link functions available. The next focus of this report is to apply this theory & binomial GLM links to a real-life dataset for predicting diabetes. \n \n Two model methods are applied in this report. The first is the GLM as mentioned above, while the second is a similar GAM version. Each of these models will be analyzed, have coefficients tested, and have models compared. Eventually a final model will be selected. \n \n The final result of this analysis found that the GLM and GAM models utilizing Complementary Log Log Link functions yielded near identical results with GAM being slightly better due to smoothing. The best predictors for a diabetes diagnosis ended up being Cholesterol, Weight, Age (Smoothed), and HDL."
+header-includes:
+   - \usepackage{amsmath}
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r, include=FALSE, echo=FALSE, message=FALSE}
+#Setup Chunk
+knitr::opts_chunk$set(echo = TRUE,tidy.opts=list(width.cutoff=80),tidy=TRUE)
+
+#Required Libraries for Course
+  library(GLMsData)
+  library(aod) #For Quick Wald Test
+  library(lmtest) #For Quick Log Likelihood
+  library(statmod) #For Quantile Residual
+  library(KernSmooth) #A3
+  library(splines)
+  library(lmvar)
+  library(ISLR)
+  library(corrplot)
+  #library(secr)
+  
+#Optional Libraries Not Recommended By Course
+  #Libraries for Graphing
+  library(tidyverse)
+  library(scales)
+  library(gridExtra)
+  
+  #Other Useful Libraries (for R Markdown)
+  library(knitr)
+  library(kableExtra)
+  library(latex2exp)
+  library(tinytex)
+  
+  #Old+Useful Packages from Prior Courses
+  #library(multcomp)
+  #library(multcompView)
+  library(pander)
+  library(MASS)
+
+  ## Multiple Fractional Polynomial Model
+  library(mfp)
+  ## Generalized Additive Models
+  library(mgcv)
+  ## Multivariate Adaptive Regression Spline (MARS) Models
+  library(earth)
+  
+
+  #install.packages("EnvStats")
+  library(EnvStats)
+  
+  library(faraway)
+  #data("diabetes", package="faraway")
+  #?diabetes
+  library(GGally)
+  library(regclass)
+
+  library(GLMsData); data(turbines, package="GLMsData")
+
+  #Kable R Summary Output
+  library(sjPlot)
+  library(sjmisc)
+  library(sjlabelled)
+
+
+#Notes:
+#Use "install.packages('library_name_here')" then use "library(library_name_here)"
+```
+
+\newpage
+
+# Introduction
+
+## Overview
+
+This project will examine a mix of theory and application of said theory - first reviewing some basics already taught to us, then expanding on this to topics that were left undiscussed. After theory is examined, an example will be given in applying said theory to a real-world dataset.
+
+The first and primary objective of this report is to discuss the theory behind the Binomial GLM (and subsequently GAM) - specifically, how and why we derive/utilize the binomial GLM, as well as how to derive, differentiate, and choose an appropriate link function. Understanding the why and how for GLM's is of utmost important so that one can aptly determine the best model for their data in advance, and also avoid making any vital blunders or mistakes in model selection.
+
+The second objective of this report is to apply said theory to a dataset comprised of over 400 individuals, with various metrics that are expected to give insight into a diabetes diagnosis or not. Medical diagnosis is an incredibly important ability to have, and while diabetes can be diagnosed directly through a blood test, being able to predict it off other easily-measurable factors (or at least get a good sense of risk level), is vital in preventing the risk of diabetes in advance. For example if someone knows that age and weight impact the odds of diabetes, they could periodically check their age/weight and see what likelihood that estimates them of having diabetes. This way, they'd know when they're statistically at risk and can make changes in advance before diabetic issues occur.
+
+The dataset is discussed in detail in the Data Analysis section. As a quick overview, the dataset contains 19 variables. Almost all of them pertain to body measurements or statistics, while one is simply the location of the individual while another is an unidentifiable ID. The majority of the data is discrete integers, with a few continuous/factor variables. These variables will be vital in predicting diabetes, as evidenced in other real-world studies done.
+
+## Statistical Analysis
+
+The statistical analysis performed combined a few tests together to get a finalized model. Generally speaking, the first step will be to determine an appropriate distribution family and accompanying link function for the data. Once this is done, a maximal (full) model will be constructed and checked for adequacy. Next, a nested (reduced) model will be selected after some testing on coefficients and compared with the original full one. This may be performed multiple times. Eventually, a final adequate model will be selected. The same tests will be performed for a GAM model, resulting in a final GLM and GAM model to compare. These will be compared while keeping in mind the "cost" of predictors in yielding their results so as to select the one that gives best results per predictor, so to speak.
+
+## Project Format
+
+Please see the table of contents on the next page.
+
+\newpage
+
+# Table of Contents (TOC)
+
+## [1] Discussion of Theory (Methodology\*^[Please note these sections on the report outline were meant to be separate, but that I've condensed them into these different portions with Professor approval.])
+
+### [1.1] Background Refresher
+
+### [1.2] Basic Regression
+
+### [1.3] Generalized Linear Models
+
+## [2] Binomial GLMs
+
+### [2.1] Derivation & Support of Binomial GLM
+
+### [2.2] Link Functions
+
+## [3] Data Analysis
+
+### [3.1] Cleaning & Adjusting
+
+### [3.2] GLM Building, Inferences\*, & Computation\*
+
+### [3.3] GAM Building, Inferences\*, & Computation\*
+
+## [4] Conclusion & Discussion
+
+### [4.1] Strengths
+
+### [4.2] Shortcomings
+
+## [5] References/Works Cited
+
+## [6] Appendices
+
+
+
+\newpage
+
+# Discussion of Theory
+
+## Background Refresher
+
+### Simple/Multi Linear Regression
+
+In Linear Regression, we might take the following formula:
+
+$Y = \beta_0 + \beta_1x_1 + ... +\beta_px_p+\epsilon$ with $\epsilon \approx N(0,\sigma_{\epsilon}^2)$
+
+If we take the expected value of Y conditional on X, we could also write this as:
+
+$E[Y|X] = \beta^TX$ (if we assume $x_0 = 1$)
+
+In this formula, we have unknown constants $\beta_i, \sigma_{\epsilon}^2$
+
+The error term $\epsilon$ varies randomly, but no matter what value our $X$ takes on, the variance of our error does not change.
+
+For linear regression, some of the major assumptions made are that:
+
+1)  Linearity - X and Y have a linear relationship.
+
+2)  Homoscedasticity - Variance of error term is the same for any X.
+
+3)  Normality of Errors - Error term is normally distributed.
+
+However, when these assumptions do not hold true, Linear Regression can produce inaccurate or even nonsensical results. Hence, Generalized Linear Models are introduced (mainly in the case of (2)/(3), while Generalized Additive Models are utilized when (1) does not hold true).
+
+### Generalized Linear Models
+
+We now construct regression models for when the assumptions mentioned above might not hold true. It takes the following formula:
+
+$\eta = g(.) = g(\mu) = g(E[Y|X]) = \beta^TX$
+
+We have our $X \in \mathbb{R}$ and some $Y$. This formula has three key components:
+
+1)  Random Component - Distribution for $Y$ conditional on $X$, or $Y|X$
+
+2)  Systematic Component - Relates some parameter $\eta$ to our $X$'s
+
+3)  Link Component - Connects the random and systematic components together ($g(u) = \eta$)
+
+With this in mind, our link component (function) is what allows us to map a non-linear relation to a linear one.
+
+#### Linear Model:
+
+In the case of our aforementioned linear model:
+
+1)  Random Component - $Y|X \approx N(\mu,\sigma^2)$
+
+2)  Systematic Component - $\eta = \beta^TX$
+
+3)  Link Component - $g(u) = \mu$
+
+Thus we see $\eta = g(\mu) = \beta^TX$ becomes $\mu = \beta^TX$
+
+Or in other words, the expected value of $Y$ conditional on $X$ is equal to our systematic component.
+
+### Acceptable Density Functions
+
+One important assumption for our generalized linear models (GLM's, henceforth) is that our random component ($Y|X$) is assumed to have a probability density/mass function (PDF/PMF, henceforth) of the form:
+
+$$ f(y;\theta,\phi) = \exp[\frac{y\theta-b(\theta)}{a(\phi)}+c(y,\phi)] $$
+
+$$ \text{where } \theta,\phi \text{ are parameters and } a,b,c \text{ are functions of said parameters.}$$
+
+Probability density functions of this form are home to the *exponential family* and called *exponential dispersion models*.
+
+It should be noted that the expectation of said distribution is $E[Y|X]$.
+
+Additionally:
+
+-   $E[Y|X] = \mu = b'(\theta)$
+
+-   $Var[Y|X] = b''(\theta)a(\phi)$
+
+### Background Theory Wrap-Up
+
+For simple linear regression, we assume Homoscedasticity & Normality of our error terms.
+
+When these assumptions change, we utilize a more generalized model, the generalized linear model (GLM).
+
+$$\eta = g(E[Y|X]) = g(\mu) = \beta^TX$$
+
+To summarize some notational aspects, we have:
+
+-   $E[Y|X]$ is what we want to estimate.
+
+-   $\theta$ determines the shape of our density for $Y|X$.
+
+-   $\phi$ is our dispersion parameter for the density of $Y|X$.
+
+-   $g(.)$ is our link function that maps a non-linear relationship to a linear one.
+
+-   $\eta$ is our parameter used to model our transformation of $E[Y|X]$ by a function $X$ (for GLM this is simply $\eta =\beta^TX$, a linear transformation).
+
+#### Acronyms
+
+From here out, the following acronyms/short-hands will be utilized frequently.
+
+-   GLM = Generalized Linear Model
+
+-   E[Y|X] is simplified to E[Y] (conditionality is expected)
+
+-   GAM = Generalized Additive Model
+
+-   PDF/PMF = Probability Density/Mass Function
+
+-   EDM = Exponential Dispersion Model
+
+\newpage
+
+# Binomial GLMs
+
+There are two cases in which our variance is not constant with respect to the binomial GLM. In both cases, $Y \in [0, 1]$.
+
+(1) In the first case, $Y$ might be a proportion (such as a total number of counts).
+
+(2) In the second case, $Y$ might be a binary value (0 for false, 1 for true).
+
+As our $Y$ is a value bounded by $[0,1]$, our variances near said boundaries must automatically be smaller than those near the middle of the range. Thus, our variance is not constant (Homoscedasticity assumption fails). Furthermore, since we're bounded by $[0,1]$, it would not be possible for our error (randomness) to be normally distributed (normality of error terms assumption fails).
+
+And so we **shouldn't** use a simple linear regression model and instead must utilize GLM's.
+
+So, we must now map some $Y \in \mathbb{R}$ to $Y \in [0,1]$.
+
+If we were inclined to, we could technically utilize a simple linear model - however, it would likely provide very poor results. For example:
+
+![Source: Professor Ryan Bakker, POLS8501, UGeorgia](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\ols.png)
+
+
+\newpage
+
+## Support for Binomial GLM over Simple Linear Regression
+
+To prove the above assumptions mathematically and provide support against utilizing a simple linear model, we examine theoretical binary data utilizing said simple linear regression model:
+
+\[E[Y] = \beta^TX  \]
+
+In the case of binary data, we find our expected value of $Y$ to be:
+
+\begin{align*}
+  E[Y] &= P(Y=1)(1) + P(Y=0)(0)\\
+  E[Y] &= P(Y=1)
+\end{align*}
+
+And so our simple linear regression model can be represented as:
+
+\[ P(Y=1) = \beta^TX\]
+
+Which is simple to interpret.
+
+However, we find that our variance is:
+
+\begin{align*}
+  Var[Y] &= E[Y](1-E[Y])\\
+  Var[Y] &= \beta^TX(1-\beta^TX)
+\end{align*}
+
+And thus our variance for $Y$ is clearly not homoscedastic as it depends on $X$ and is not constant.
+
+Similarly, we can examine our error term $\epsilon$. We know that our actual value for $Y$ will either be $0$ or $1$. And our predicted value $E[Y]$ would be $\beta^TX$.
+
+Thus, our $\epsilon_i$ term would be:
+
+* $1-\beta^TX_i$ when the actual value is $1$
+
+* $0-\beta^TX_i$ when the actual value is $0$
+
+And thus can clearly never be normally distributed.
+
+Thus, we've now mathematically shown that our ideal assumptions for a simple linear model have failed.
+
+To further support that a simple linear model would be poor beyond just our assumptions failing, as $Y \in \mathbb{R}$, it is possible to predict values for $Y\in(-\infty, 0) \cup (0,1) \cup (1,\infty)$. Considering our data is binary 0,1, these predictions might not be too helpful.
+
+Thus we assume our $Y|X$ follows a binomial distribution. But what about error terms?
+
+\newpage
+
+## Link Functions for Binomial Data
+
+As discussed above, we want our $Y \in [0,1]$ for binomial data (binary or similarly constructed proportion). And so, we must determine some link function to appropriately map $Y$.
+
+The following link functions can all sufficiently map $Y$:
+
+1) **The Logit Link: **\newline$g(\mu) = \log(\frac{\mu}{1-\mu}) = \text{logit}(\mu) = \text{log-odds}(\mu)$
+
+2) **The Probit Link: **\newline$g(\mu) = \phi^{-1}(\mu) = \text{probit}(\mu)$
+
+3) **The Complimentary Log-Log Link: **\newline$g(\mu) = \log(-\log(1-\mu)) = \text{cloglog}(1-\mu)$
+
+Each of the above link functions has a slight difference in when they are used, though for the most part the Logit link is used by default.
+
+\newpage
+
+### The Logit Link Function
+
+The Logit Function is considered the canonical link function for Binomial data - that is to say, the default link function that is utilized. It is, generally speaking, well applicable to binomial data and would provide similar results to probit/cloglog in many cases - however, it is important to make the distinction of use cases even if this link is the default.
+
+The Logit Link arises from the fact that our error terms will not be normally distributed nor constant across values of X. Our $Y$ value may only have two possible values (0,1) and so similarly (again as shown above) the error terms can also only have two values for each X.
+
+As a result of this revelation, we assume that the error terms are **Logistically Distributed**.
+
+This link also allows for interpretation in terms of odds-ratio.
+
+### The Probit Link Function
+
+When we take data and dichotomize it (make it binary), we inherently lose some of the information in performing this transformation. For example, the data could be of any form (discrete, continuous, categorical, etc.) but has now been converted to some proxy binary variable. Some proxy variable like this might be more aptly defined as a **latent variable** that is derived from some threshold.
+
+For examples sake, let us consider a datapoint we will examine later on in this report. From the Diabetes dataset within the Faraway package, we find that **glycosolated hemoglobin greater than 7.0** is usually taken as a positive diagnosis of diabetes.
+
+Thus we can create a latent variable for diabetes diagnosis, either the individual has diabetes or they don't. However, the underlying data for this proxy variable is a continuous number and could theoretically take on any value from 0 to 1 (in percentage form, or 0 to 100 non-percentage).
+
+Lastly, if the true underlying variable that is being predicted is continuous, one can assume that the errors are in fact normally distributed and thus we can utilize a link function based off the normal CDF. As we utilize the inverse, this corresponds with a range between 0 and 1 inclusive.
+
+\newpage
+
+### Comparing the Logit and Probit Links
+
+Both links are able to model a binary response with the only difference between them being the distributions of the error terms assumed for each.
+
+It should be noted that when N is sufficiently large the binomial distribution sufficiently approximates the normal distribution.
+
+Below we see a plot of the Normal and Logistic Distribution CDF's:
+
+```{r, echo=FALSE, warning=FALSE, comment=FALSE}
+normal_dat = ecdf(rnorm(10000))
+logi_dat = ecdf(rlogis(10000))
+extrm_dat = ecdf(-revd(10000))
+
+plot(0,0, pch="", ylim=c(0,1), xlim=c(-6,6),
+     xlab="X", ylab="Probability", main="CDFs of Distributions")
+  lines(normal_dat, col="red")
+  lines(logi_dat, col="blue")
+  abline(h=0.5,col="black", lty=2)
+  legend(-6, 0.9,
+         legend=c("Normal CDF", "Logistic CDF", "Midpoint"),
+         col=c("red", "blue", "black"),
+         lty=1, cex=0.8)
+```
+
+Clearly, we can see that both distribution CDF's are symmetrical around $Y=0.5$. Furthermore, both lines are quite similar in shape/curve.
+
+One final point to note is that the Logistic CDF is asymptotic as it approaches 0 and 1, while the normal distribution is well-defined.
+
+This shines light on why the two links often produce incredibly similar results, except for when probabilities are near 0 or 1.
+
+\newpage
+
+### The Complimentary Log-Log Link Function
+
+The third link function we examine is somewhat different from the prior two mentioned. The Complimentary Log-Log Link is much more rarely utilized and is specifically used for a niche type of data (generally speaking, survival analysis).
+
+This third link selection is again based off of the assumed distribution of our error terms. Instead of assuming the error term follows a logistic or normal distribution, we assume that it follows the extreme-value distribution (e.g. Weibull).
+
+As an illustrating example, take the injection of some chemical into an animal. We then examine the latent variable on if the animal survives the injection or not. In a case like this, very small changes in chemical dosage initially might not change the number killed much - but once the dosage reaches a certain point, this number killed jumps drastically. This is where the extreme-value distribution is handy.
+
+The table below examines something like this - the number of beetles killed after injection of a certain dosage of a chemical. The different link functions predicted the following:
+
+![Source: Professor K. Chough Carriere, STAT562, UAlberta](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\beetle.png)
+
+When we look at the lower doses, Probit/Logit links fail to produce good predictions (as compared to the complementary log log link). This is due to the impact of the proportion of beetles being killed jumping drastically between 1.784 and 1.811.
+
+\newpage
+
+### Threshold/Tolerance Distributions
+
+A threshold (or tolerance) distribution is in essence what was discussed above - it is the distribution that you believe the latent variable may conform to, which in turn impacts the anticipated distribution that our error terms follow.
+
+Now that the differences in the link functions has been explained, we can more formally define and derive said link functions. We will derive the probit link function utilizing the **Turbines** dataset that the textbook follows.
+
+To preface, the information given to us on the Turbine dataset can be summarized here:
+
+```{r, echo=FALSE, results='hide'} 
+turbines$Proportion <- turbines$Fissures/turbines$Turbines
+colnames(turbines) <- c("Hours (x)","Turbines (m)", "Fissures (m*y)", "Proportion (y)")
+```
+
+`r kable(turbines) %>% kable_styling(position = "center", latex_options = "HOLD_position")`
+
+Let us now assume that turbines have some tolerance ($t_i$) for hours used, and when this tolerance is below a certain threshold $T$, fissures develop. Assume this tolerance follows a normal distribution with mean tolerance $\tau_i$. With this in mind, we have:
+
+\begin{align*}
+  t_i &\approx N(\tau_i, \sigma^2) \\
+  \tau_i &= \beta'_0 + \beta'_1 x_i
+\end{align*}
+
+We want to examine whether or not a turbine develops fissures, which we can write as:
+
+\begin{align*}
+  y_i =
+  \begin{cases}
+    1\text{ if }t_i \leq T \text{ and we develop a fissure} \\
+    0\text{ if }t_i > T \text{ and we don't develop a fissure}
+  \end{cases}
+\end{align*}
+
+Thus, the probability of a fissure developing for a turbine can be written as:
+
+\[ \mu_i = E[y_i] = P(y_i=1) = P(t_i \leq T) = \phi(\frac{T-\tau_i}{\sigma})\]
+
+If we plug in $\tau_i$, we find:
+
+\[ \frac{T-\tau_i}{\sigma} = \frac{T-\beta'_0 - \beta'_1 x_i}{\sigma} = \beta_0 + \beta_1 x_i\]
+
+If we replace terms including $\beta'_0, \beta'_1$ as some $\beta_0 = \frac{T-\beta'_0}{\sigma}, \beta_1 = -\frac{\beta_1'}{\sigma}$, giving us our link function:
+
+\[ g(\mu_i) = \beta_0 + \beta_1x_i \]
+
+Similarly, one could derive the respective link functions for Logit or Complimentary Log-Log following this process.
+
+\newpage
+
+### Comparing the Common Link Functions
+
+To wrap up this section pertaining to link function selection, we summarize the key differences below.
+
+| Link Type | Transformation | Threshold Distribution | Example Application |
+|-----------|----------------|------------------------|---------------------|
+| Logit | $\ln(\frac{\pi}{1-\pi})$ | Logistic      | Binary/Ordinal Data |
+| Probit | $\phi^{-1}(\pi)$        | Normal        | Binary/Ordinal Data |
+| C-Log-Log | $\ln(-\ln(1-\pi))$   | Extreme Value | Survival Analysis |
+
+And we see the three CDF's plotted against each other:
+
+```{r, echo=FALSE, warning=FALSE, comment=FALSE}
+plot(0,0, pch="", ylim=c(0,1), xlim=c(-6,6),
+     xlab="X", ylab="Probability", main="CDFs of Distributions")
+  lines(normal_dat, col="red")
+  lines(logi_dat, col="blue")
+  lines(extrm_dat, col="green")
+  abline(h=0.5,col="black", lty=2)
+  legend(-6, 0.9,
+         legend=c("Normal CDF", "Logistic CDF", "Extreme Value CDF", "Midpoint"),
+         col=c("red", "blue", "green", "black"),
+         lty=1, cex=0.8)
+```
+Again examining this plot, it becomes clear where slight differences in link functions exist. 
+
+| Link Type | Curve Features | Characteristic | Potential Example |
+|-----------|-----------|------------------------|---------------|
+| Logit | Symmetrical | Equal Probability Change Rate | Undergrad vs. Grad |
+|  | $Y\in(0,1)$|P(Y=0) & P(Y=1) Do Not Exist | |
+|-----------|--------------------|------------|--------------|
+| Probit | Symmetrical | Equal Probability Change Rate | Turbine Fissures
+|  | $Y\in[0,1]$|P(Y=0) & P(Y=1) Do Exist | |
+|-----------|--------------------|------------|--------------|
+| C-Log-Log | Increasing  | Different Probability Change Rate | Dosage Survival |
+|  | $Y\in[0,1]$|P(Y=0) & P(Y=1) Do Exist | |
+|-----------|--------------------|------------|--------------|
+
+\newpage
+
+### Illustrative Example
+
+Before this section is wrapped up, we re-examine our turbine dataset against the different link functions. We see the results below, which all appear to give quite similar outcomes.
+
+```{r, echo=FALSE, results='hide'}
+
+data(turbines, package="GLMsData")
+
+glm.fit.1<-glm(Fissures/Turbines ~ Hours, family=binomial(link="logit"), weight=Turbines, data=turbines)
+glm.fit.2<-glm(Fissures/Turbines ~ Hours, family=binomial(link="probit"), weight=Turbines, data=turbines)
+glm.fit.3<-glm(Fissures/Turbines ~ Hours, family=binomial(link="cloglog"), weight=Turbines, data=turbines)
+
+newHour<-seq(0,10000,length=1000)
+newMab1<-predict(glm.fit.1, se.fit=TRUE, newdata=data.frame(Hours=newHour))
+newMab2<-predict(glm.fit.2, se.fit=TRUE, newdata=data.frame(Hours=newHour))
+newMab3<-predict(glm.fit.3, se.fit=TRUE, newdata=data.frame(Hours=newHour))
+
+plot(Fissures/Turbines~Hours, data=turbines, xlim=c(0,10000),ylim=c(0,1),las=1,pch=19, main='Predicted Values')
+lines(exp(newMab1$fit)/(1+exp(newMab1$fit))~newHour, lwd=2, col="red")
+lines(pnorm(newMab2$fit)~newHour, lwd=2, col="blue")
+lines(1-exp(-exp(newMab3$fit))~newHour, lwd=2, col="green")
+legend(-6, 0.9,
+         legend=c("Logit", "Probit", "C-LogLog"),
+         col=c("red", "blue", "green"),
+         lty=1, cex=0.8)
+
+```
+
+### Key Take-Aways
+
+As there has been plenty of theory discussed above, this section aims to quickly clarify the three key factors that must be specified in utilizing binomial GLM's.
+
+1) The distribution of our response variable $Y$ conditional on $X$ (or, $Y|X$) is presumed to follow the binomial distribution.
+
+2) The distribution of our error terms $\epsilon$ are presumed (commonly) follow one of three distributions - the logistic distribution, the normal distribution, and the extreme value distribution.
+
+3) Based on the error term distribution, we construct our link function.
+
+Generally speaking, the link functions will tend to return very similar results. However, certain niche cases can make one a better fit than others.
+
+\newpage
+
+# Data Analysis
+
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE, comment=FALSE, fig.show="hide"}
+data("diabetes", package="faraway")
+diabetes <- diabetes
+
+
+diabetes <- subset(diabetes, select = -c(id))
+
+#Initial
+summary(diabetes)
+diabetes[!complete.cases(diabetes),]
+
+#Remove 2nd Reading
+diabetes <- subset(diabetes, select = -c(bp.2s,bp.2d))
+
+#After removing second BP readings
+summary(diabetes)
+# Remove remaining NA rows
+diabetes <- diabetes[complete.cases(diabetes),]
+summary(diabetes)
+
+#Dichotomize GlyHB, Rename
+diabetes$status <- diabetes$glyhb
+diabetes[which(diabetes[,"glyhb"]<=7),"status"] = 0
+diabetes[which(diabetes[,"glyhb"]>7),"status"] = 1
+
+
+#Convert to Factor
+#diabetes$status <- as.factor(diabetes$status)
+
+#Final Summary
+summary(diabetes)
+
+```
+
+## Data Description
+
+We will be utilizing the dataset **Diabetes** that is taken from the **Faraway** library.
+
+**Description:** 403 African Americans were interviewed in a study to understand the prevalence of obesity, diabetes, and other cardiovascular risk factors in central Virginia.
+
+| **Variable** | **Type**|**Description** |
+|---------|----------|------------------------------|
+| ID | Discrete | Subject ID |
+| Chol | Discrete | Total Cholesterol |
+| Stab.Glu | Discrete | Stabilized Glucose |
+| HD1 | Discrete | High-Density Lipoprotein |
+| Ratio | Continuous| Cholesterol/HDL Ratio |
+| GlyHB | Continuous|Glycosolated Heomglobin |
+| Location | Factor | County (Buckingham or Louisa) |
+|Age| Discrete | Age in Years|
+|Gender | Factor| Gender (Male or Female) |
+| Height | Discrete| Height in Inches |
+|Weight| Discrete | Weight in Pounds |
+|Waist | Discrete | Waist in Inches |
+|Hip | Discrete |Hip in Inches|
+|Frame | Factor| Body Frame (Small/Medium/Large)|
+|BP.1S| Discrete |First Systolic Blood Pressure|
+|BP.1D| Discrete | First Diastolic Blood Pressure|
+|BP.2S| Discrete | Second Systolic Blood Pressure|
+|BP.2D| Discrete | Second Diastolic Blood Pressure|
+|Time.PPN | Discrete | Post-Prandial Time when Labs were Drawn (Minutes) |
+
+It also denotes that "a glycosolated hemoglobin greater than 7.0 is usually taken as a positive diagnosis of diabetes".
+
+Thus, we will use this as our latent variable to predict diabetes.
+
+\newpage
+
+## Data Cleaning/Adjustments
+
+**Cleaning:**
+
+The first step before building our models is cleaning our data. For starters, we will remove the ID column as this information is not useful to us.
+
+Next, we examine any missing data to ensure we don't accidentally use a variable that has a majority of missing values.
+
+A quick summary output was taken for our data which revealed first and foremost that 262/403 subjects did not get a second blood pressure reading. Instead of removing over half our subjects, will will instead remove these variables as they are not sufficiently populated.
+
+We then re-examine our summary of our data and find that the most NA entries is 13 for GlyHB. Since this will be our latent variable that we're trying to predict based off of, we will remove these rows entirely. Our dataset is now of size 390.
+
+This final adjustment now leaves us with 24 rows of data remaining that contain some form of NA value. The largest number of NA's now appears in the Frame variable (11 NA's), while the next highest number of NA values for a variable is just 5.
+
+If our dataset were larger, leaving these NA values in still might be ok and make no discernable difference. However, as our dataset is quite small, we remove them and end up with 390 rows of useable data.
+
+**Dichotomizing Glycosolated Hemoglobin:**
+
+We now can dichotomize our latent variable Glycosolated Hemoglobin. We will replace the values in this column with a 1 or 0 as follows:
+
+If GlyHB $> 7$, we designate the individual as having diabetes (1). Otherwise ($\leq 7$), they do not have diabetes (0).
+
+We then rename the column "status" to represent diabetes status.
+
+With our data now cleaned and adjusted, we can move on to examining the data more in-depth and determine some working models.
+
+
+\newpage
+
+## Model Building & Testing (GLM)
+
+Before we begin building our models, we first examine our latent variable to see if we notice anything unique. From plotting our gly-hb levels against status classification, we see that there are more negative status results than positive ones by a large margin.
+
+```{r, fig.width=8, fig.height=4, warning=FALSE, echo=FALSE}
+plot(diabetes$glyhb, diabetes$status)
+```
+
+Though our latent variable was continuous which might suggest a probit link, our latent variable value range was not evenly split. Our minimum value was `r min(diabetes$glyhb)` while our maximum was `r max(diabetes$glyhb)`. Yet, we've determined diabetes to be anything greater than 7. So non-diabetes values have a range of `r 7-min(diabetes$glyhb)` while diabetic values have a range of `r max(diabetes$glyhb)-7`, nearly double. This discrepancy might make our cloglog link more reasonable. 
+
+As a result, we will examine models with both the probit and cloglog links.
+
+\newpage
+
+We next examine each variable (aside from factors) against the individuals status to check if anything pops out at us. We might want to see which plots lend themselves to an appropriate shape.
+
+```{r, fig.width=16, fig.height=8, warning=FALSE, echo=FALSE}
+#ggpairs(diabetes)
+gg_male <- ggplot(data=diabetes, aes(y=status))
+#gg_male <- ggplot(data=diabetes[which(diabetes$gender=="male"),], aes(y=status))
+
+Status1 <- gg_male + geom_point(aes(x=chol))
+#Status2 <- gg_male + geom_point(aes(x=stab.glu))
+Status3 <- gg_male + geom_point(aes(x=hdl))
+#Status4 <- gg_male + geom_point(aes(x=ratio))
+#Status5 <- gg_male + geom_boxplot(aes(x=location))
+Status6 <- gg_male + geom_point(aes(x=age))
+#Status7 <- gg_male + geom_col(aes(x=gender))
+Status8 <- gg_male + geom_point(aes(x=height))
+Status9 <- gg_male + geom_point(aes(x=weight))
+#Status10 <- gg_male + geom_point(aes(x=frame))
+Status11 <- gg_male + geom_point(aes(x=bp.1s))
+Status12 <- gg_male + geom_point(aes(x=bp.1d))
+#Status13 <- gg_male + geom_point(aes(x=waist))
+#Status14 <- gg_male + geom_point(aes(x=hip))
+Status15 <- gg_male + geom_point(aes(x=time.ppn))
+
+grid.arrange(Status1,Status3,
+             Status6,Status8,Status9,Status11,
+             Status12,Status15,
+             nrow=2, ncol=4,
+             top = "Status Variable Comparison")
+
+#grid.arrange(Status1,Status2,Status3,Status4,Status5,
+#             Status6,Status7,Status8,Status9,Status10,
+#             Status11,Status12,Status13,Status14,Status15,
+#             nrow=3, ncol=5)
+
+```
+
+However, none appear to be very well-divided.
+
+\newpage
+
+**Correlation Check:**
+
+Furthermore, before constructing our models we want to examine if any variables are highly correlated as this might cause issues in said model (due to multicolinearity).
+
+First and foremost, it should be noted that Ratio is a combination of Cholesterol / HDL, and so we remove this variable while keeping Cholesterol & HDL.
+
+```{r, fig.width=16, fig.height=16, warning=FALSE, echo=FALSE}
+diabetes$ratio = NULL
+```
+
+Moving on, a quick correlation plot reveals to us that \{Waist, Hip, Weight\} are all highly correlated to one another. Additionally, we also see that the variables \{glyhb, stab glu\} are highly correlated. Lastly, we find \{bp.1d, bp.1s\} to be moderately correlated.
+
+```{r, fig.width=16, fig.height=16, warning=FALSE, echo=FALSE, comment=FALSE}
+diabetes_cor <- cor(subset(diabetes, select=-c(location,gender,frame,status)), use = "complete.obs")
+corrplot(diabetes_cor, method = 'color', type="lower", addCoef.col = "black", diag=FALSE, main="\nCorrelation Plot")
+```
+
+\newpage
+
+With this in mind, we now create a very quick basic probit model with all predictors so we can quickly examine the VIF of each:
+
+```{r, fig.width=16, fig.height=16, warning=FALSE, echo=FALSE}
+glm_full_probit <- glm(status ~ (. -glyhb), family=binomial(link="probit"), data=diabetes)
+#VIF(glm_full_probit)
+```
+
+`r kable(VIF(glm_full_probit)) %>% kable_styling(latex_options=c("HOLD_position"))`
+
+Clearly, we find \{Waist, Hip, Weight\} to be highly correlated as their GVIF values are much higher than 2. To account for this, we will remove the Hip & Waist predictors while leaving Weight, as generally speaking weight is known to be correlated to diabetes while waist/hip can simply be abnormally large without weight being high.
+
+Though stabilized glucose does not have a high VIF, in researching it was found that stabilized glucose and glycosolated hemoglobin are highly correlated. As a result, we'll also remove stabilized glucose as it would be similar to the underlying variable that created our diabetes status.
+
+Now knowing that we want to remove the aforementioned predictors, we will repeat our data-cleaning steps to see if we can slightly increase the data we have to work with (as there were a few NA rows exclusively in waist/hip/ratio). In doing so, we gain 2 rows of data to increase our total rows to 368.
+
+```{r, echo=FALSE, results=FALSE, warning=FALSE, comment=FALSE, fig.show="hide"}
+data("diabetes", package="faraway")
+diabetes <- diabetes
+diabetes <- subset(diabetes, select = -c(id))
+
+#Remove 2nd Reading
+diabetes <- subset(diabetes, select = -c(bp.2s,bp.2d))
+
+#Remove Wasit/Hip/Ratio/Stab Glucose
+diabetes$waist = NULL
+diabetes$hip = NULL
+diabetes$ratio = NULL
+diabetes$stab.glu = NULL
+
+# Remove remaining NA rows
+diabetes <- diabetes[complete.cases(diabetes),]
+
+#Dichotomize GlyHB, Rename
+diabetes$status <- diabetes$glyhb
+diabetes[which(diabetes[,"glyhb"]<=7),"status"] = 0
+diabetes[which(diabetes[,"glyhb"]>7),"status"] = 1
+
+#Final Summary
+summary(diabetes)
+
+```
+
+\newpage
+
+### Model Creation:
+
+We now create a model to predict status using a binomial GLM. To start, we will simply examine the probit and cloglog models with all predictors aside from glyhb included (the maximal model) and then reduce from there.
+
+```{r, fig.width=16, fig.height=16, warning=FALSE, echo=FALSE}
+glm_full_probit <- glm(status ~ (. -glyhb), family=binomial(link="probit"), data=diabetes)
+glm_full_cloglog <- glm(status ~ (. -glyhb), family=binomial(link="cloglog"), data=diabetes)
+
+#summary(glm_full_probit)
+#summary(glm_full_cloglog)
+
+```
+
+
+We can see the summary of these two models here:
+
+**Probit Model:**
+
+![Full GLM Probit Model Summary](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\GLM_full_probit.png)
+
+\newpage
+
+**CLogLog Model:**
+
+![Full GLM CLogLog Model Summary](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\GLM_full_cloglog.png)
+
+Based on these models, we find both provide the same significance conclusions. Based on the previously mentioned reasoning behind why the CLogLog link may be better, along with the fact that the p-values for CLogLog are slightly lower, we'll continue our analysis from here on out with just the CLogLog model.
+
+\newpage
+
+**Calculating our Coefficients (Beta):**
+
+As a very quick refresher, our coefficients are calculated using the iterative weighted least squares (IWLS) technique. In the above pictures, we can see the number of iterations required at the bottom. Though not specifically derived here, the general algorithm is given:
+
+(1) Initialize the algorithm by selecting random starting values for $\beta^{(0)}$, the vector of all $\beta$'s. A general starting point is often 0 or 1.
+
+(2) Construct **adjusted** dependent variables $z^{(0)} = \Sigma^p_{k=1}x_{ik}\beta_k^{(0)} + (y_i-\mu_i^{(0)})(\frac{d\eta_i}{d\mu_i^{(0)}})$
+
+(3) Construct our weights $w_{ii}^{(0)}= \frac{1}{Var(Y_i)}(\frac{d\mu_i}{d\eta_i})^2$
+
+(4) Perform our weighted least squares calculation $\beta^{(1)} = (X^TW^{(0)}X)^{-1}X^TW^{(0)}Z^{(0)}$
+
+(5) Repeat the steps until the change in iterated $\beta$'s is approximately 0, that is $|\beta^m - \beta^{(m-1)}|=0$.
+
+Once this is done, you'll have estimates for our coefficients.
+
+\newpage
+
+### Coefficient Significance Test
+
+In examining our model, we now find that Cholesterol, HDL, Age, and Weight are significant. That is to say we have the following hypothesis test performed:
+
+\[H_0: \beta = 0 \text{ vs. } H_A: \beta \neq 0 \]
+
+In which we reject the null hypothesis for the $\beta$ relating to Cholesterol, HDL, Age, and Weight. For the other variables, we fail to reject the null hypothesis ($\beta=0$). As a result of this test, we create the reduced model utilizing only the significant variables. The model is as follows:
+
+```{r, fig.width=16, fig.height=16, warning=FALSE, echo=FALSE}
+glm_nested_cloglog <- glm(status ~ chol + hdl + age + weight, family=binomial(link="cloglog"), data=diabetes)
+
+#summary(glm_nested_cloglog)
+
+```
+
+![Nested GLM CLogLog Model Summary](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\GLM_nested.png)
+\newpage
+
+### Model Adequacy (Goodness of Fit): Maximal & Nested
+
+Before we compare the two models to find which is the better use, we first check to ensure that they are both adequate using a goodness of fit test. The goodness of fit test is a statistical test that determines whether or not the observed values match those expected by the model.
+
+For the goodness-of-fit test, we simply find our deviance and calculated chi-squared value. If this results in a p-value less than 0.05, we reject the model and say it is not adequate. If it is greater, we accept it as adequate.
+
+For these two models, we find the following p-values:
+
+(1) Full Model = `r 1 - pchisq(deviance(glm_full_cloglog),df.residual(glm_full_cloglog))`
+
+(2) Nested Model = `r 1 - pchisq(deviance(glm_nested_cloglog),df.residual(glm_nested_cloglog))`
+
+We find that both are adequate.
+
+\newpage
+
+### Model Selection (Likelihood Ratio Test): Maximal Model vs. Nested Model
+
+We now want to examine if which model is better. It should be noted we do not use ANOVA because, as mentioned prior, residual deviance and pearson residuals are determined entirely by the fitted values and hence are not meaningful.
+
+We utilize likelihood ratio tests (or score tests) for binary data. We will use the likelihood ratio test.
+
+We calculate some deviance from our likelihood ratio in the form:
+
+\[LRT = 2[\text{LogLik(Full Model) - LogLik(Nested Model)}] \]
+
+We then perform the following hypothesis test:
+
+\[H_0: \beta_{q+1}=...=\beta_p=0 \text{ vs. } H_A: \text{At least one of }\beta_{q+1}...\beta_p\neq0 \]
+
+Where $\beta_{q+1}$ to $\beta_p$ is the additional coefficients of the maximal model.
+
+```{r, fig.width=16, fig.height=8, warning=FALSE, echo=FALSE}
+LL_full <- logLik(glm_full_cloglog)
+LL_part <- logLik(glm_nested_cloglog)
+
+LL_teststat <- 2 * (as.numeric(LL_full)-as.numeric(LL_part))
+
+LL_pval <- pchisq(LL_teststat, df = (12-4), lower.tail = FALSE)
+
+```
+
+Our resulting p-value from said test is `r LL_pval` which is of course greater than 0.05 and thus we fail to reject the null hypothesis. This means that we find our reduced model to be adequate and thus should utilize it over the maximal model.
+
+Thus, our final model selected can be written as follows:
+
+\[\log(-\log(1-\pi)) = \beta_\text{intercept} + \beta_\text{age}x_\text{age} + \beta_\text{weight}x_\text{weight} + \beta_\text{hdl}x_\text{hdl} + \beta_\text{chol}x_\text{chol}\]
+
+Where the respective betas are $\{ -6.974607   , 0.048145,      0.010281    ,      -0.028277   ,     0.009671     \}$.
+
+\newpage
+
+## Model Building & Testing (GAM)
+
+### Coefficient Significance Test
+
+Note: The Null Hypothesis and Alternative Hypothesis are the same as in the GLM section, with their respective coefficients. Hence it will not be re-displayed here.
+
+We will now examine a generalized additive model instead of a linear one. The first model we look at is again the maximal model, where we've applied a smoothing function to all non-categorical predictors (i.e. all but gender, frame, and location).
+
+In examining the summary of our model, we find that the same predictors from GLM (Age, Weight, Cholesterol, HDL) are significant, along with adding time.ppn as well. Thus, we try reducing our model to just include these variables.
+
+```{r, fig.width=16, fig.height=4, warning=FALSE, echo=FALSE}
+ 
+gam_full_cloglog <- gam(status ~ s(chol) + s(hdl) + s(age) + s(height) + s(weight) + s(bp.1s) + s(bp.1d) + s(time.ppn) + location + gender + frame, family=binomial(link="cloglog"), data=diabetes)
+
+#summary(gam_full_cloglog) 
+
+###
+gam_smooth_nested_cloglog <- gam(status ~ s(chol) + s(hdl) + s(age) + s(weight) + s(time.ppn), family=binomial(link="cloglog"), data=diabetes)
+```
+
+![Full GAM Model Summary](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\GAM_full.png)
+
+\newpage
+
+For the reduced model, we examine the plots of the smoothing functions to see if smoothing is necessary, or if the variable is significant sans smoothing:
+
+```{r, fig.width=16, fig.height=4, warning=FALSE, echo=FALSE}
+par(mfrow=c(1,5))
+plot(gam_smooth_nested_cloglog,se=T)
+```
+
+From these plots, we notice that while HDL, Age, and Time.PPN clearly have some degree of non-linear form (i.e. curvature), Cholesterol and Weight are linear. This indicates they may be significant even without smoothing terms, and so we remove the smoothing to generate a third model.
+
+Examining the summary of this model with no smoothing , we find that Time.PPN becomes non-significant. However, once this is removed, HDL also becomes non-significant (though quite close at 0.556). As a result, we try to see if HDL may still be significant when not smoothed. And thus we arrive at our final reduced model for GAM where Age is smoothed, while Cholesterol, HDL, and Weight are not.
+
+```{r, fig.width=16, fig.height=8, warning=FALSE, echo=FALSE}
+
+gam_nosmooth_nested_cloglog <- gam(status ~ chol + s(hdl) + s(age) + s(time.ppn) + weight, family=binomial(link="cloglog"), data=diabetes)
+#summary(gam_nosmooth_nested_cloglog) 
+
+###
+
+gam_final_cloglog <- gam(status ~ chol + hdl + s(age) + weight, family=binomial(link="cloglog"), data=diabetes)
+#summary(gam_final_cloglog)
+
+```
+
+![Final GAM Model Summary](H:/My Files\School\Grad School WLU\Semester 2\ST662 Regression\Final Project\pics\GAM_final.png)
+
+\newpage
+
+### Model Adequacy (Goodness of Fit): Maximal & Nested
+
+We again perform a goodness of fit test.
+
+For these two models, we find the following p-values:
+
+(1) Full Model = `r 1 - pchisq(deviance(gam_full_cloglog),df.residual(gam_full_cloglog))`
+
+(2) Final Model = `r 1 - pchisq(deviance(gam_final_cloglog),df.residual(gam_final_cloglog))`
+
+We find that both are adequate.
+
+\newpage
+
+### Model Selection (Likelihood Ratio Test): Maximal Model vs. Nested Model
+
+We now confirm model adequacy again in the same fashion as done with the GLM's. We compare the "maximal" model and the "reduced" model where the reduced model in this instance is the final one (Age is smoothed, Cholesterol, HDL, and Weight are not).
+
+```{r, fig.width=16, fig.height=8, warning=FALSE, echo=FALSE}
+LL_full_gam <- logLik(gam_full_cloglog)
+LL_part_gam <- logLik(gam_final_cloglog)
+
+LL_teststat_gam <- 2 * (as.numeric(LL_full_gam)-as.numeric(LL_part_gam))
+
+LL_pval_gam <- pchisq(LL_teststat_gam, df = (20.07-6.11), lower.tail = FALSE)
+
+```
+
+Our resulting p-value from said test is `r LL_pval_gam` which is more than 0.05 and thus we fail to reject the null hypothesis. This means that we find our reduced model to be adequate and thus should utilize it over the maximal model.
+
+\newpage
+
+## Results
+
+We now have two finalized models for the GLM method and the GAM method. As the models are separate and not nested in any way, one way to compare which is better is through AIC or BIC, in which a lower value provides a better model.
+
+We find an \{AIC, BIC\} for each model of:
+
+(1) GLM Model: \{`r AIC(glm_nested_cloglog)`, `r BIC(glm_nested_cloglog)`\}
+
+(2) GAM Model: \{`r AIC(gam_final_cloglog)`, `r BIC(gam_final_cloglog)`\}
+
+Here we clearly see that both models have quite close AIC/BIC scores - however, the AIC difference is larger than the BIC difference and favours the GAM.
+
+As a quick explanation, AIC and BIC penalize models for excessive predictor usage, just in different ways.
+
+(1) AIC = 2k - 2ln(Maximum Likelihood) where k is the number of predictors/parameters.
+
+(2) BIC = -2ln(Maximum Likelihood) + k*ln(n) where n is the number of observations/rows.
+
+We also examine a QQ-Plot (which provides an indication of normality) for these models:
+
+```{r, fig.width=16, fig.height=8, warning=FALSE, echo=FALSE}
+# QQ PLOTS
+set.seed(1)
+par(mfrow=c(1,2))
+qqnorm(qresid(glm_nested_cloglog), main="GLM QQ-Plot"); qqline(qresid(glm_nested_cloglog))
+qqnorm(qresid(gam_final_cloglog), main="GAM QQ-Plot"); qqline(qresid(gam_final_cloglog))
+
+```
+
+Though quite similar, this also shows us that GAM is an ever so slightly better fit.
+
+Realistically, both models appear to be nearly identical in comparison of AIC/BIC and QQ-Plot, however, we will choose the GAM due to the slight difference.
+
+Both finalized/reduced models found the same predictors to be significant. The only difference in the end was applying a smoothing function to age.
+
+\newpage
+
+# Conclusion & Discussion
+
+## Strengths
+
+For starters, this analysis utilizing GLM's and GAM's ended up concluding that the same predictors were significant, which is, generally speaking, a good confirmation check (especially since the full GAM only had non-significant values that were linear as opposed to smoothed).
+
+The analysis also concluded that the nested model was better in all cases which is what one would hope to see when removing non-significant predictors.
+
+Most importantly, the predictors chosen as indicators for diabetes were (upon external research) ones that have already been studied and found to have links to diabetes, which indicates that we've likely chosen a very strong model. Furthermore, most predictors that were **not** selected did not have studies examining links, or had studies that found no link as well!
+
+## Shortcomings
+
+The major shortcoming of this analysis is simply in the underlying knowledge required to understand the dataset. Even with external research, my knowledge of the predictors and what they actually meant medically or in the context of diabetes was quite poor, and, as a result, there may have been mis-steps in handling the data or performing the analysis. As an example, without external research I would not have found that stabilized glucose would be a very correlated value to glycosylated hemoglobin and would have accidentally been included in the model (which would cause quite a lot of issues).
+
+Another shortcoming, albeit less major, was the size of the dataset. Having only 368 subjects with data is not great in general. When trying to predict medical accuracy, it is important to be precise - with less data, we introduce a higher risk of incorrect conclusions being drawn due to such a small subset of data. For example we may find with 3,000 samples that some other predictor is quite significant but which we missed due to such a small sample. Additionally, we removed important data due to high missingness.
+
+Lastly, the analysis took liberties and made assumptions on link function instead of examining all of them - as a result, another link may have ended up providing a better model but was missed due to the selection process.
+
+\newpage
+
+# References/Works Cited
+
+(1) Generalized Linear Models, (Tibs, Ryan).
+    
+    Link: https://www.stat.cmu.edu/~ryantibs/advmethods/notes/glm.pdf
+
+(2) Complementary Log-Log Model, (Carrier, K)
+
+    Link: http://www.stat.ualberta.ca/~kcarrier/STAT562/comp_log_log.pdf
+
+(3) Binary, Logit, and Probit Links, (Bakker, R)
+
+    Link: https://spia.uga.edu/faculty_pages/rbakker/pols8501/MLENotes2a.pdf
+
+(4) Generalized Linear Models, Link Functions, (Newsom, J)
+
+    Link: http://web.pdx.edu/~newsomj/cdaclass/ho_glm.pdf
+
+(5) Link Functions and the Generalized Linear Model, (Newsom, J)
+
+    Link: http://web.pdx.edu/~newsomj/mvclass/ho_link.pdf
+    
+
+(6) Generalized Linear Models, Other Choices of Link (Rodriguez, German)
+
+    Link: https://data.princeton.edu/wws509/notes/c3s7
+
+(7) Dataset: Faraway Library, "Diabetes"
+
+(8) Textbook: Generalized Linear Models with Examples in R, \{(Dunn, Peter), (Smyth, Gordon)\}
+
+
+\newpage
+
+# Appendix
+
+## Code
+
+See R Markdown File if you would like to examine code in-depth.
+
+```{r ref.label=knitr::all_labels(), echo = T, eval = F}
+
+
+
+```
